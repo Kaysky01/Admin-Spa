@@ -52,7 +52,7 @@ class ReportController extends Controller
     public function updateStatus(Request $request, $id)
     {
         $request->validate([
-            'status' => 'required|in:Diproses,Ditindaklanjuti,Disetujui,Ditolak',
+            'status' => 'required|in:Diproses,Ditindaklanjuti,Selesai,Ditolak',
             'admin_response' => 'nullable|string'
         ]);
 
@@ -73,7 +73,7 @@ class ReportController extends Controller
         : "Status laporan diperbarui menjadi {$request->status}.",
     'status' => match ($request->status) {
         'Ditolak' => 'rejected',
-        'Disetujui' => 'approved',
+        'Selesai' => 'approved',
         default => 'processing',
     },
     'is_read' => false,
