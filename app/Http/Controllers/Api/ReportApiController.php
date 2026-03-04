@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class ReportApiController extends Controller
 {
@@ -55,54 +56,90 @@ public function myRecent(Request $request)
     // =========================
     // CREATE REPORT (USER SUBMIT)
     // =========================
-    public function store(Request $request)
-    {
-        $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'title' => 'required|string',
-            'description' => 'required|string',
-            'location' => 'nullable|string',
-            'media.*' => 'file|mimes:jpg,jpeg,png,mp4,mov|max:300240',
-        ]);
+   public function store(Request $request)
+{
+    $request->validate([
+        'category_id' => 'required|exists:categories,id',
+        'title' => 'required|string',
+        'description' => 'required|string',
+        'location' => 'nullable|string',
+        'media.*' => 'file|mimes:jpg,jpeg,png,mp4,mov|max:300240',
+    ]);
 
-        $user = auth()->user();
+    $user = auth()->user();
 
-        if (!$user) {
-            return response()->json(['message' => 'Unauthenticated'], 401);
-        }
-
-        $media = [];
-        if ($request->hasFile('media')) {
-            foreach ($request->file('media') as $file) {
-                $media[] = $file->store('reports', 'public');
-            }
-        }
-
-        $report = Report::create([
-            'user_id' => $user->id,
-            'category_id' => $request->category_id,
-            'title' => $request->title,
-            'description' => $request->description,
-            'location' => $request->location,
-            'media' => $media,
-            'status' => 'Diproses',
-            'is_verified' => false,
-        ]);
-
-        // 🔔 NOTIFIKASI: LAPORAN BERHASIL DIKIRIM
-        Notification::create([
-            'user_id' => $user->id,
-            'sender_role' => 'sistem',
-            'message' => 'Laporan berhasil dikirim dan menunggu verifikasi.',
-            'status' => 'pending',
-            'is_read' => false,
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'data' => $report
-        ], 201);
+    if (!$user) {
+        return response()->json(['message' => 'Unauthenticated'], 401);
     }
+
+    // =====================
+    // LIMIT LAPORAN PER MENIT
+    // =====================
+    $reportsLastMinute = Report::where('user_id', $user->id)
+        ->where('created_at', '>=', now()->subMinute())
+        ->count();
+
+    if ($reportsLastMinute >= 1) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Terlalu banyak laporan dalam waktu singkat. Coba lagi nanti.'
+        ], 429);
+    }
+
+    // =====================
+    // LIMIT LAPORAN PER HARI
+    // =====================
+    $reportsToday = Report::where('user_id', $user->id)
+        ->whereDate('created_at', Carbon::today())
+        ->count();
+
+    if ($reportsToday >= 15) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Batas maksimal laporan hari ini sudah tercapai (15 laporan) Silahkan coba lagi besok.'
+        ], 429);
+    }
+
+    // =====================
+    // UPLOAD MEDIA
+    // =====================
+    $media = [];
+    if ($request->hasFile('media')) {
+        foreach ($request->file('media') as $file) {
+            $media[] = $file->store('reports', 'public');
+        }
+    }
+
+    // =====================
+    // CREATE REPORT
+    // =====================
+    $report = Report::create([
+        'user_id' => $user->id,
+        'category_id' => $request->category_id,
+        'title' => $request->title,
+        'description' => $request->description,
+        'location' => $request->location,
+        'media' => $media,
+        'status' => 'Diproses',
+        'is_verified' => false,
+    ]);
+
+    // =====================
+    // NOTIFIKASI
+    // =====================
+    Notification::create([
+        'user_id' => $user->id,
+        'sender_role' => 'sistem',
+        'message' => 'Laporan berhasil dikirim dan menunggu verifikasi.',
+        'status' => 'pending',
+        'is_read' => false,
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'data' => $report
+    ], 201);
+}
 
     // =========================
     // GET DETAIL REPORT (USER)

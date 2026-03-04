@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ReportApiController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\CategoryController;
 
 Route::prefix('v1')->group(function () {
 
@@ -37,5 +38,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/read', [NotificationController::class, 'markAllRead']);
 });
 
+//category//
+ Route::get('/categories', [CategoryController::class, 'index']);
 
 });
