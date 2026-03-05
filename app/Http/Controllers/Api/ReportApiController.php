@@ -29,144 +29,181 @@ class ReportApiController extends Controller
             ->latest()
             ->get();
 
+        // 🔥 UBAH MEDIA JADI URL API
+        $reports->map(function ($report) {
+
+            $report->media = collect($report->media ?? [])->map(function ($file) {
+
+                $filename = basename($file);
+
+                return url('api/v1/media/reports/' . $filename);
+
+            });
+
+            return $report;
+        });
+
         return response()->json([
             'success' => true,
             'data' => $reports
         ]);
     }
-// File: app/Http/Controllers/Api/ReportController.php
 
-public function myRecent(Request $request)
-{
-    // Ambil user yang login
-    $user = $request->user();
+    // =========================
+    // GET 3 RECENT REPORTS
+    // =========================
+    public function myRecent(Request $request)
+    {
+        $user = $request->user();
 
-    // Ambil data: Urutkan Terbaru -> Ambil 3 -> Eksekusi
-    $reports = \App\Models\Report::where('user_id', $user->id)
-                    ->latest() // Otomatis order by created_at DESC
-                    ->take(3)  // Batasi cuma 3
+        $reports = Report::where('user_id', $user->id)
+                    ->latest()
+                    ->take(3)
                     ->get();
 
-    return response()->json([
-        'success' => true,
-        'data' => $reports
-    ]);
-}
+        // 🔥 UBAH MEDIA JADI URL API
+        $reports->map(function ($report) {
+
+            $report->media = collect($report->media ?? [])->map(function ($file) {
+
+                $filename = basename($file);
+
+                return url('api/v1/media/reports/' . $filename);
+
+            });
+
+            return $report;
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $reports
+        ]);
+    }
 
     // =========================
-    // CREATE REPORT (USER SUBMIT)
-    // =========================
-   public function store(Request $request)
-{
-    $request->validate([
-        'category_id' => 'required|exists:categories,id',
-        'title' => 'required|string',
-        'description' => 'required|string',
-        'location' => 'nullable|string',
-        'media.*' => 'file|mimes:jpg,jpeg,png,mp4,mov|max:300240',
-    ]);
-
-    $user = auth()->user();
-
-    if (!$user) {
-        return response()->json(['message' => 'Unauthenticated'], 401);
-    }
-
-    // =====================
-    // LIMIT LAPORAN PER MENIT
-    // =====================
-    $reportsLastMinute = Report::where('user_id', $user->id)
-        ->where('created_at', '>=', now()->subMinute())
-        ->count();
-
-    if ($reportsLastMinute >= 1) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Terlalu banyak laporan dalam waktu singkat. Coba lagi nanti.'
-        ], 429);
-    }
-
-    // =====================
-    // LIMIT LAPORAN PER HARI
-    // =====================
-    $reportsToday = Report::where('user_id', $user->id)
-        ->whereDate('created_at', Carbon::today())
-        ->count();
-
-    if ($reportsToday >= 15) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Batas maksimal laporan hari ini sudah tercapai (15 laporan) Silahkan coba lagi besok.'
-        ], 429);
-    }
-
-    // =====================
-    // UPLOAD MEDIA
-    // =====================
-    $media = [];
-    if ($request->hasFile('media')) {
-        foreach ($request->file('media') as $file) {
-            $media[] = $file->store('reports', 'public');
-        }
-    }
-
-    // =====================
     // CREATE REPORT
-    // =====================
-    $report = Report::create([
-        'user_id' => $user->id,
-        'category_id' => $request->category_id,
-        'title' => $request->title,
-        'description' => $request->description,
-        'location' => $request->location,
-        'media' => $media,
-        'status' => 'Diproses',
-        'is_verified' => false,
-    ]);
+    // =========================
+    public function store(Request $request)
+    {
+        $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'title' => 'required|string',
+            'description' => 'required|string',
+            'location' => 'nullable|string',
+            'media.*' => 'file|mimes:jpg,jpeg,png,mp4,mov|max:300240',
+        ]);
 
-    // =====================
-    // NOTIFIKASI
-    // =====================
-    Notification::create([
-        'user_id' => $user->id,
-        'sender_role' => 'sistem',
-        'message' => 'Laporan berhasil dikirim dan menunggu verifikasi.',
-        'status' => 'pending',
-        'is_read' => false,
-    ]);
+        $user = auth()->user();
 
-    return response()->json([
-        'success' => true,
-        'data' => $report
-    ], 201);
-}
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+
+        // =====================
+        // LIMIT PER MENIT
+        // =====================
+        $reportsLastMinute = Report::where('user_id', $user->id)
+            ->where('created_at', '>=', now()->subMinute())
+            ->count();
+
+        if ($reportsLastMinute >= 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terlalu banyak laporan dalam waktu singkat. Coba lagi nanti.'
+            ], 429);
+        }
+
+        // =====================
+        // LIMIT PER HARI
+        // =====================
+        $reportsToday = Report::where('user_id', $user->id)
+            ->whereDate('created_at', Carbon::today())
+            ->count();
+
+        if ($reportsToday >= 15) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Batas maksimal laporan hari ini sudah tercapai (15 laporan).'
+            ], 429);
+        }
+
+        // =====================
+        // UPLOAD MEDIA
+        // =====================
+        $media = [];
+
+        if ($request->hasFile('media')) {
+
+            foreach ($request->file('media') as $file) {
+
+                $path = $file->store('reports', 'public');
+
+                $media[] = $path;
+            }
+        }
+
+        // =====================
+        // CREATE REPORT
+        // =====================
+        $report = Report::create([
+            'user_id' => $user->id,
+            'category_id' => $request->category_id,
+            'title' => $request->title,
+            'description' => $request->description,
+            'location' => $request->location,
+            'media' => $media,
+            'status' => 'Diproses',
+            'is_verified' => false,
+        ]);
+
+        // =====================
+        // NOTIFIKASI
+        // =====================
+        Notification::create([
+            'user_id' => $user->id,
+            'sender_role' => 'sistem',
+            'message' => 'Laporan berhasil dikirim dan menunggu verifikasi.',
+            'status' => 'pending',
+            'is_read' => false,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $report
+        ], 201);
+    }
 
     // =========================
-    // GET DETAIL REPORT (USER)
+    // GET DETAIL REPORT
     // =========================
     public function show($id)
-{
-    $user = auth()->user();
+    {
+        $user = auth()->user();
 
-    if (!$user) {
-        return response()->json(['message' => 'Unauthenticated'], 401);
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+
+        $report = Report::where('id', $id)
+            ->where('user_id', $user->id)
+            ->with('category')
+            ->firstOrFail();
+
+        // 🔥 UBAH MEDIA JADI URL API
+        $report->media = collect($report->media ?? [])->map(function ($file) {
+
+            $filename = basename($file);
+
+            return url('api/v1/media/reports/' . $filename);
+
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $report
+        ]);
     }
-
-    $report = Report::where('id', $id)
-        ->where('user_id', $user->id)
-        ->with('category')
-        ->firstOrFail();
-
-    // pastikan media array
-    $report->media = is_string($report->media)
-        ? json_decode($report->media, true)
-        : $report->media;
-
-    return response()->json([
-        'success' => true,
-        'data' => $report
-    ]);
-}
 
     // =========================
     // GET CATEGORIES
@@ -180,7 +217,7 @@ public function myRecent(Request $request)
     }
 
     // =========================
-    // GET REPORT DETAIL (ADMIN / PUBLIC)
+    // GET REPORT DETAIL ADMIN
     // =========================
     public function getReportDetail($id)
     {
@@ -192,6 +229,14 @@ public function myRecent(Request $request)
                 'message' => 'Report not found'
             ], 404);
         }
+
+        $report->media = collect($report->media ?? [])->map(function ($file) {
+
+            $filename = basename($file);
+
+            return url('api/v1/media/reports/' . $filename);
+
+        });
 
         return response()->json([
             'success' => true,

@@ -45,18 +45,15 @@ Route::middleware('auth:sanctum')->group(function () {
 //category//
  Route::get('/categories', [CategoryController::class, 'index']);
 
-});
 
-//media
-Route::get('/media/{folder}/{file}', function ($folder, $file) {
 
-    $path = "public/$folder/$file";
+// =====================
+// MEDIA FILE
+// =====================
+Route::get('/media/{path}', function ($path) {
 
-    if (!Storage::exists($path)) {
-        return response()->json(['message' => 'File not found'], 404);
-    }
 
-    $fullPath = storage_path("app/$path");
+    return redirect()->away(url('/storage/' . $path));
 
-    return Response::file($fullPath);
+})->where('path', '.*');
 });
