@@ -6,6 +6,9 @@ use App\Http\Controllers\Api\ReportApiController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Response;
+
 
 Route::prefix('v1')->group(function () {
 
@@ -42,4 +45,18 @@ Route::middleware('auth:sanctum')->group(function () {
 //category//
  Route::get('/categories', [CategoryController::class, 'index']);
 
+});
+
+//media
+Route::get('/media/{folder}/{file}', function ($folder, $file) {
+
+    $path = "public/$folder/$file";
+
+    if (!Storage::exists($path)) {
+        return response()->json(['message' => 'File not found'], 404);
+    }
+
+    $fullPath = storage_path("app/$path");
+
+    return Response::file($fullPath);
 });
