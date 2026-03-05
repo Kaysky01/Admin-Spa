@@ -27,6 +27,7 @@ class Report extends Model
         'responded_at' => 'datetime',
         'verified_at' => 'datetime',
         'is_verified' => 'boolean'
+        
     ];
 
     public function user()

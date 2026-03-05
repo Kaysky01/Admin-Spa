@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ReportApiController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\UserController;
 
 Route::prefix('v1')->group(function () {
 

@@ -145,23 +145,28 @@ public function myRecent(Request $request)
     // GET DETAIL REPORT (USER)
     // =========================
     public function show($id)
-    {
-        $user = auth()->user();
+{
+    $user = auth()->user();
 
-        if (!$user) {
-            return response()->json(['message' => 'Unauthenticated'], 401);
-        }
-
-        $report = Report::where('id', $id)
-            ->where('user_id', $user->id)
-            ->with('category')
-            ->firstOrFail();
-
-        return response()->json([
-            'success' => true,
-            'data' => $report
-        ]);
+    if (!$user) {
+        return response()->json(['message' => 'Unauthenticated'], 401);
     }
+
+    $report = Report::where('id', $id)
+        ->where('user_id', $user->id)
+        ->with('category')
+        ->firstOrFail();
+
+    // pastikan media array
+    $report->media = is_string($report->media)
+        ? json_decode($report->media, true)
+        : $report->media;
+
+    return response()->json([
+        'success' => true,
+        'data' => $report
+    ]);
+}
 
     // =========================
     // GET CATEGORIES

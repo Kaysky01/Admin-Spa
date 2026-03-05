@@ -12,7 +12,7 @@ class CategoryController extends Controller
 public function index()
 {
 $admin = Auth::guard('admin')->user();
-
+$categories = Category::withCount('reports')->get();
 $categories = Category::latest()->get();
 
 return view('categories.index', compact('categories', 'admin'   ));

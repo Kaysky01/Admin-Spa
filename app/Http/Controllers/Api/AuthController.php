@@ -122,4 +122,15 @@ public function updateProfile(Request $request)
         'data' => $user
     ]);
 }
+
+public function saveToken(Request $request)
+{
+    $user = auth()->user();
+    $user->fcm_token = $request->fcm_token;
+    $user->save();
+
+    return response()->json([
+        'message' => 'Token saved'
+    ]);
+}
 }

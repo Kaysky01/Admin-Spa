@@ -101,17 +101,39 @@ public function store(Request $request)
         ], 403);
     }
 
+    $request->validate([
+        'title' => 'required|string',
+        'description' => 'required|string',
+        'media.*' => 'file|mimes:jpg,jpeg,png,mp4,mov,avi|max:50480'
+    ]);
+
+    $mediaPaths = [];
+
+    if ($request->hasFile('media')) {
+
+        foreach ($request->file('media') as $file) {
+
+            $path = $file->store('reports', 'public');
+
+           $mediaPaths[] = $path;
+        }
+    }
+
     $report = Report::create([
         'user_id' => $user->id,
-        'judul' => $request->judul,
-        'isi' => $request->isi,
-        'status' => 'Diproses' // default awal
+        'title' => $request->title,
+        'description' => $request->description,
+        'media' => $mediaPaths,
+        'status' => 'Diproses'
     ]);
 
     return response()->json([
-        'message' => 'Laporan berhasil dikirim'
+        'message' => 'Laporan berhasil dikirim',
+        'report' => $report
     ]);
-}   public function verify(Request $request, $id)
+}
+
+public function verify(Request $request, $id)
     {
         $report = Report::findOrFail($id);
 
