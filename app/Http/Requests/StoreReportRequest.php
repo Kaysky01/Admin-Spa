@@ -8,7 +8,8 @@ class StoreReportRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return auth()->check();
+        // Route already protected by auth:sanctum middleware
+        return true;
     }
 
     public function rules(): array
