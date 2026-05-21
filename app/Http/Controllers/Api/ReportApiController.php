@@ -3,52 +3,43 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Report;
+use App\Http\Requests\StoreReportRequest;
+use App\Http\Resources\ReportResource;
+use App\Http\Resources\CategoryResource;
 use App\Models\Category;
-use App\Models\User;
-use App\Models\Notification;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
-use Carbon\Carbon;
 use App\Models\FcmToken;
 use App\Services\FirebaseService;
+use App\Services\ReportService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class ReportApiController extends Controller
 {
+    public function __construct(
+        protected ReportService $reportService
+    ) {}
+
     // =========================
-    // GET USER REPORTS
+    // GET USER REPORTS (PAGINATED)
     // =========================
     public function index(Request $request)
     {
-        $user = auth()->user();
+        $user = $request->user();
 
-        if (!$user) {
-            return response()->json(['message' => 'Unauthenticated'], 401);
-        }
-
-        $reports = Report::where('user_id', $user->id)
-            ->with('category')
-            ->latest()
-            ->paginate($request->get('per_page', 20));
-
-        // 🔥 UBAH MEDIA JADI URL API
-        $reports->getCollection()->transform(function ($report) {
-            $report->media = collect($report->media ?? [])->map(function ($file) {
-                $filename = basename($file);
-                return url('api/v1/media/reports/' . $filename);
-            });
-            return $report;
-        });
+        $reports = $this->reportService->getUserReports(
+            $user,
+            (int) $request->get('per_page', 20)
+        );
 
         return response()->json([
-            'success' => true,
-            'data' => $reports->items(),
+            'success'    => true,
+            'data'       => ReportResource::collection($reports),
             'pagination' => [
                 'current_page' => $reports->currentPage(),
-                'last_page' => $reports->lastPage(),
-                'per_page' => $reports->perPage(),
-                'total' => $reports->total(),
+                'last_page'    => $reports->lastPage(),
+                'per_page'     => $reports->perPage(),
+                'total'        => $reports->total(),
             ],
         ]);
     }
@@ -58,236 +49,127 @@ class ReportApiController extends Controller
     // =========================
     public function myRecent(Request $request)
     {
-        $user = $request->user();
-
-        $reports = Report::where('user_id', $user->id)
-                    ->latest()
-                    ->take(3)
-                    ->get();
-
-        // 🔥 UBAH MEDIA JADI URL API
-        $reports->map(function ($report) {
-
-            $report->media = collect($report->media ?? [])->map(function ($file) {
-
-                $filename = basename($file);
-
-                return url('api/v1/media/reports/' . $filename);
-
-            });
-
-            return $report;
-        });
+        $reports = $this->reportService->getRecentReports($request->user());
 
         return response()->json([
             'success' => true,
-            'data' => $reports
+            'data'    => ReportResource::collection($reports),
         ]);
     }
 
     // =========================
     // CREATE REPORT
     // =========================
-    public function store(Request $request, FirebaseService $firebase)
+    public function store(StoreReportRequest $request, FirebaseService $firebase)
     {
-        $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'title' => 'required|string',
-            'description' => 'required|string',
-            'location' => 'nullable|string',
-            'media.*' => 'file|mimes:jpg,jpeg,png,mp4,mov|max:300240',
-        ]);
+        $user = $request->user();
 
-        $user = auth()->user();
-
-        if (!$user) {
-            return response()->json(['message' => 'Unauthenticated'], 401);
-        }
-
-        // =====================
-        // LIMIT PER MENIT
-        // =====================
-        $reportsLastMinute = Report::where('user_id', $user->id)
-            ->where('created_at', '>=', now()->subMinute())
-            ->count();
-
-        if ($reportsLastMinute >= 1) {
+        // Rate limit check
+        $rateLimitError = $this->reportService->checkRateLimit($user);
+        if ($rateLimitError) {
             return response()->json([
                 'success' => false,
-                'message' => 'Terlalu banyak laporan dalam waktu singkat. Coba lagi nanti.'
+                'message' => $rateLimitError,
             ], 429);
         }
 
-        // =====================
-        // LIMIT PER HARI
-        // =====================
-        $reportsToday = Report::where('user_id', $user->id)
-            ->whereDate('created_at', Carbon::today())
-            ->count();
+        // Create report with processed media
+        $report = $this->reportService->createReport(
+            $user,
+            $request->validated(),
+            $request->file('media', [])
+        );
 
-        if ($reportsToday >= 15) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Batas maksimal laporan hari ini sudah tercapai (15 laporan).'
-            ], 429);
-        }
-
-        // =====================
-        // UPLOAD MEDIA
-        // =====================
-        $media = [];
-
-        if ($request->hasFile('media')) {
-
-            foreach ($request->file('media') as $file) {
-
-                $path = $file->store('reports', 'public');
-
-                $media[] = $path;
-            }
-        }
-
-        // =====================
-        // CREATE REPORT
-        // =====================
-        $report = Report::create([
-            'user_id' => $user->id,
-            'category_id' => $request->category_id,
-            'title' => $request->title,
-            'description' => $request->description,
-            'location' => $request->location,
-            'media' => $media,
-            'status' => 'Diproses',
-            'is_verified' => false,
-        ]);
-
-        // =====================
-        // NOTIFIKASI
-        // =====================
-        Notification::create([
-            'user_id' => $user->id,
-            'sender_role' => 'sistem',
-            'message' => 'Laporan berhasil dikirim dan menunggu verifikasi.',
-            'status' => 'pending',
-            'is_read' => false,
-        ]);
-        // =====================
-        // PUSH NOTIFICATION (FCM)
-        // =====================
-        try {
-            $tokens = FcmToken::where('user_id', $user->id)->get();
-
-            foreach ($tokens as $token) {
-                $sent = $firebase->sendNotification(
-                    $token->fcm_token,
-                    'Laporan Berhasil Dikirim',
-                    'Laporan Anda sedang menunggu verifikasi admin.'
-                );
-
-                // Auto-delete invalid/expired tokens
-                if (!$sent) {
-                    $token->delete();
-                    Log::info('FCM: Deleted invalid token', ['token_id' => $token->id]);
-                }
-            }
-        } catch (\Exception $e) {
-            // FCM failure should NEVER block report creation
-            Log::error('FCM batch send failed', ['error' => $e->getMessage()]);
-        }
+        // FCM notification (non-blocking — try/catch)
+        $this->sendFcmNotification($firebase, $user);
 
         return response()->json([
             'success' => true,
-            'data' => $report
+            'data'    => new ReportResource($report->load('category')),
         ], 201);
     }
 
     // =========================
     // GET DETAIL REPORT
     // =========================
-    public function show($id)
+    public function show(int $id, Request $request)
     {
-        $user = auth()->user();
+        $report = $this->reportService->getReportDetail($id, $request->user());
 
-        if (!$user) {
-            return response()->json(['message' => 'Unauthenticated'], 401);
-        }
+        return response()->json([
+            'success' => true,
+            'data'    => new ReportResource($report),
+        ]);
+    }
 
-        $report = Report::where('id', $id)
-            ->where('user_id', $user->id)
-            ->with('category')
-            ->firstOrFail();
-
-        // 🔥 UBAH MEDIA JADI URL API
-        $report->media = collect($report->media ?? [])->map(function ($file) {
-
-            $filename = basename($file);
-
-            return url('api/v1/media/reports/' . $filename);
-
+    // =========================
+    // GET CATEGORIES (CACHED)
+    // =========================
+    public function getCategories()
+    {
+        $categories = Cache::remember('categories', 3600, function () {
+            return Category::select(['id', 'name', 'icon', 'description'])->get();
         });
 
         return response()->json([
             'success' => true,
-            'data' => $report
+            'data'    => CategoryResource::collection($categories),
         ]);
     }
 
     // =========================
-    // GET CATEGORIES
+    // GET REPORT DETAIL (ADMIN)
     // =========================
-    public function getCategories()
+    public function getReportDetail(int $id)
     {
-        return response()->json([
-            'success' => true,
-            'data' => Category::all()
-        ]);
-    }
-
-    // =========================
-    // GET REPORT DETAIL ADMIN
-    // =========================
-    public function getReportDetail($id)
-    {
-        $report = Report::with(['category', 'user'])->find($id);
+        $report = $this->reportService->getReportDetailAdmin($id);
 
         if (!$report) {
             return response()->json([
                 'success' => false,
-                'message' => 'Report not found'
+                'message' => 'Report not found',
             ], 404);
         }
 
-        $report->media = collect($report->media ?? [])->map(function ($file) {
-
-            $filename = basename($file);
-
-            return url('api/v1/media/reports/' . $filename);
-
-        });
-
         return response()->json([
             'success' => true,
-            'data' => $report
+            'data'    => new ReportResource($report),
         ]);
     }
 
     // =========================
-    // STATISTICS
+    // STATISTICS (CACHED)
     // =========================
     public function getStatistics()
     {
         return response()->json([
             'success' => true,
-            'data' => [
-                'total_reports' => Report::count(),
-                'by_status' => Report::selectRaw('status, count(*) as total')
-                    ->groupBy('status')
-                    ->get(),
-                'by_category' => Report::selectRaw('category_id, count(*) as total')
-                    ->groupBy('category_id')
-                    ->with('category')
-                    ->get(),
-            ]
+            'data'    => $this->reportService->getStatistics(),
         ]);
+    }
+
+    // =========================
+    // PRIVATE HELPERS
+    // =========================
+    private function sendFcmNotification(FirebaseService $firebase, $user): void
+    {
+        try {
+            $tokens = FcmToken::where('user_id', $user->id)->pluck('fcm_token');
+
+            foreach ($tokens as $fcmToken) {
+                $sent = $firebase->sendNotification(
+                    $fcmToken,
+                    'Laporan Berhasil Dikirim',
+                    'Laporan Anda sedang menunggu verifikasi admin.'
+                );
+
+                if (!$sent) {
+                    FcmToken::where('fcm_token', $fcmToken)->delete();
+                    Log::info('FCM: Deleted invalid token');
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('FCM batch send failed', ['error' => $e->getMessage()]);
+        }
     }
 }
