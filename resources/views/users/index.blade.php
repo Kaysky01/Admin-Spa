@@ -12,6 +12,14 @@
     @endif
 
     <div class="table-container">
+        <!-- Header with Add Button -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="mb-0"><i class="fas fa-users me-2"></i>Daftar Pengguna</h5>
+            <a href="{{ route('users.create') }}" class="btn btn-primary">
+                <i class="fas fa-user-plus me-1"></i>Tambah Pengguna
+            </a>
+        </div>
+
         <!-- Search & Filter -->
         <div class="mb-4">
             <form action="{{ route('users.index') }}" method="GET" class="row g-3">
