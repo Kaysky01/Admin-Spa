@@ -8,6 +8,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Report;
+use App\Models\FcmToken;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
@@ -62,5 +63,13 @@ protected $casts = [
     public function reports()
     {
         return $this->hasMany(Report::class);
+    }
+
+    /**
+     * Relasi ke FCM tokens (multi-device support)
+     */
+    public function fcmTokens()
+    {
+        return $this->hasMany(FcmToken::class);
     }
 }

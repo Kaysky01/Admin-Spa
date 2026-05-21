@@ -8,15 +8,18 @@ use App\Models\Category;
 use App\Models\User;
 use App\Models\Notification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use App\Models\FcmToken;
+use App\Services\FirebaseService;
 
 class ReportApiController extends Controller
 {
     // =========================
     // GET USER REPORTS
     // =========================
-    public function index()
+    public function index(Request $request)
     {
         $user = auth()->user();
 
@@ -27,25 +30,26 @@ class ReportApiController extends Controller
         $reports = Report::where('user_id', $user->id)
             ->with('category')
             ->latest()
-            ->get();
+            ->paginate($request->get('per_page', 20));
 
         // 🔥 UBAH MEDIA JADI URL API
-        $reports->map(function ($report) {
-
+        $reports->getCollection()->transform(function ($report) {
             $report->media = collect($report->media ?? [])->map(function ($file) {
-
                 $filename = basename($file);
-
                 return url('api/v1/media/reports/' . $filename);
-
             });
-
             return $report;
         });
 
         return response()->json([
             'success' => true,
-            'data' => $reports
+            'data' => $reports->items(),
+            'pagination' => [
+                'current_page' => $reports->currentPage(),
+                'last_page' => $reports->lastPage(),
+                'per_page' => $reports->perPage(),
+                'total' => $reports->total(),
+            ],
         ]);
     }
 
@@ -84,7 +88,7 @@ class ReportApiController extends Controller
     // =========================
     // CREATE REPORT
     // =========================
-    public function store(Request $request)
+    public function store(Request $request, FirebaseService $firebase)
     {
         $request->validate([
             'category_id' => 'required|exists:categories,id',
@@ -167,6 +171,29 @@ class ReportApiController extends Controller
             'status' => 'pending',
             'is_read' => false,
         ]);
+        // =====================
+        // PUSH NOTIFICATION (FCM)
+        // =====================
+        try {
+            $tokens = FcmToken::where('user_id', $user->id)->get();
+
+            foreach ($tokens as $token) {
+                $sent = $firebase->sendNotification(
+                    $token->fcm_token,
+                    'Laporan Berhasil Dikirim',
+                    'Laporan Anda sedang menunggu verifikasi admin.'
+                );
+
+                // Auto-delete invalid/expired tokens
+                if (!$sent) {
+                    $token->delete();
+                    Log::info('FCM: Deleted invalid token', ['token_id' => $token->id]);
+                }
+            }
+        } catch (\Exception $e) {
+            // FCM failure should NEVER block report creation
+            Log::error('FCM batch send failed', ['error' => $e->getMessage()]);
+        }
 
         return response()->json([
             'success' => true,

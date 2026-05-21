@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use Illuminate\Http\Request;
+use App\Models\FcmToken;
+use App\Services\FirebaseService;
 
 class NotificationController extends Controller
 {
@@ -26,4 +28,28 @@ class NotificationController extends Controller
             'message' => 'All notifications marked as read'
         ]);
     }
+    
+    public function sendTestNotification(
+    Request $request,
+    FirebaseService $firebase
+)
+{
+    $user = $request->user();
+
+    $tokens = FcmToken::where('user_id', $user->id)->get();
+
+    foreach ($tokens as $token) {
+
+        $firebase->sendNotification(
+            $token->fcm_token,
+            'Test Notification',
+            'Halo dari Laravel 🚀'
+        );
+    }
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Notification sent'
+    ]);
+}
 }

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ReportApiController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\FcmController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
@@ -42,18 +43,38 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/read', [NotificationController::class, 'markAllRead']);
 });
 
+// =====================
+// FCM TOKEN API (MOBILE)
+// =====================
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/fcm-token', [FcmController::class, 'store']);
+    Route::post('/fcm-token/remove', [FcmController::class, 'remove']);
+});
+Route::post(
+    '/notifications/test',
+    [NotificationController::class, 'sendTestNotification']
+);
+
 //category//
  Route::get('/categories', [CategoryController::class, 'index']);
 
 
 
 // =====================
-// MEDIA FILE
+// MEDIA FILE (Direct Serve — no redirect)
 // =====================
 Route::get('/media/{path}', function ($path) {
+    $fullPath = storage_path('app/public/' . $path);
 
+    if (!file_exists($fullPath)) {
+        abort(404, 'File not found');
+    }
 
-    return redirect()->away(url('/storage/' . $path));
+    $mime = mime_content_type($fullPath);
 
+    return Response::file($fullPath, [
+        'Content-Type' => $mime,
+        'Cache-Control' => 'public, max-age=86400', // Cache 24 jam
+    ]);
 })->where('path', '.*');
 });

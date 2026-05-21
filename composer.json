@@ -8,6 +8,7 @@
 "require": {
         "php": "^8.2",
         "google/apiclient": "^2.19",
+        "kreait/firebase-php": "^8.2",
         "laravel/framework": "^11.0",
         "laravel/sanctum": "*",
         "laravel/tinker": "^2.10.1"

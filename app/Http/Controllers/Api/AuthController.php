@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+
 class AuthController extends Controller
 {
     public function login(Request $request)
@@ -46,30 +48,21 @@ public function google(Request $request)
         'id_token' => 'required'
     ]);
 
-    $idToken = $request->id_token;
-
-    // Bypass SSL untuk LOCALHOST
-    $context = stream_context_create([
-        "ssl" => [
-            "verify_peer" => false,
-            "verify_peer_name" => false,
-        ],
-    ]);
-
-    $response = file_get_contents(
-        "https://oauth2.googleapis.com/tokeninfo?id_token=" . $idToken,
-        false,
-        $context
+    $response = Http::get(
+        'https://oauth2.googleapis.com/tokeninfo',
+        [
+            'id_token' => $request->id_token
+        ]
     );
 
-    if (!$response) {
+    if (!$response->successful()) {
         return response()->json([
             'success' => false,
             'message' => 'Invalid Google token'
         ], 401);
     }
 
-    $payload = json_decode($response, true);
+    $payload = $response->json();
 
     if (!isset($payload['email'])) {
         return response()->json([
@@ -88,7 +81,10 @@ public function google(Request $request)
         ]
     );
 
+    // Hapus token lama
     $user->tokens()->delete();
+
+    // Generate token baru
     $token = $user->createToken('mobile-token')->plainTextToken;
 
     return response()->json([

@@ -5,7 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Report;
 use App\Models\Category;
 use App\Models\Notification;
+use App\Models\FcmToken;
+use App\Services\FirebaseService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ReportController extends Controller
 {
@@ -78,6 +81,13 @@ class ReportController extends Controller
     },
     'is_read' => false,
 ]);
+
+        // 🔥 FCM PUSH NOTIFICATION
+        $this->sendFcmToUser(
+            $report->user_id,
+            'Status Laporan Diperbarui',
+            "Laporan Anda diperbarui menjadi {$request->status}."
+        );
 
         return redirect()->back()
             ->with('success', 'Status laporan berhasil diperbarui');
@@ -154,6 +164,13 @@ public function verify(Request $request, $id)
             'is_read' => false,
         ]);
 
+        // 🔥 FCM PUSH NOTIFICATION
+        $this->sendFcmToUser(
+            $report->user_id,
+            'Laporan Diverifikasi ✅',
+            'Laporan Anda telah diverifikasi dan ditindaklanjuti.'
+        );
+
         return redirect()->back()
             ->with('success', 'Laporan berhasil diverifikasi');
     }
@@ -186,6 +203,13 @@ public function verify(Request $request, $id)
             'is_read' => false,
         ]);
 
+        // 🔥 FCM PUSH NOTIFICATION
+        $this->sendFcmToUser(
+            $report->user_id,
+            'Laporan Ditolak ❌',
+            'Laporan Anda ditolak. Alasan: ' . $request->rejection_reason
+        );
+
         return redirect()->back()
             ->with('success', 'Laporan ditolak');
     }
@@ -211,6 +235,13 @@ public function verify(Request $request, $id)
         'is_read' => false,
     ]);
 
+    // 🔥 FCM PUSH NOTIFICATION
+    $this->sendFcmToUser(
+        $report->user_id,
+        'Verifikasi Dibatalkan',
+        'Verifikasi laporan Anda dibatalkan. Laporan kembali ke status diproses.'
+    );
+
     return redirect()->back()
         ->with('success', 'Verifikasi laporan berhasil dibatalkan');
 }
@@ -235,5 +266,27 @@ public function verify(Request $request, $id)
 
         return redirect()->route('reports.index')
             ->with('success', 'Laporan berhasil dihapus');
+    }
+
+    // =========================
+    // HELPER: SEND FCM TO USER
+    // =========================
+    private function sendFcmToUser(int $userId, string $title, string $body): void
+    {
+        try {
+            $firebase = app(FirebaseService::class);
+            $tokens = FcmToken::where('user_id', $userId)->get();
+
+            foreach ($tokens as $token) {
+                $sent = $firebase->sendNotification($token->fcm_token, $title, $body);
+
+                if (!$sent) {
+                    $token->delete();
+                    Log::info('FCM: Deleted invalid token', ['token_id' => $token->id]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('FCM send failed', ['error' => $e->getMessage()]);
+        }
     }
 }
