@@ -6,17 +6,24 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Intervention\Image\ImageManager;
-use Intervention\Image\Drivers\Gd\Driver;
 
 class ImageService
 {
-    protected ?ImageManager $manager = null;
+    protected $manager = null;
 
     public function __construct()
     {
-        if (class_exists(ImageManager::class)) {
-            $this->manager = new ImageManager(new Driver());
+        // Only load Intervention Image if installed (prevents crash on VPS without it)
+        if (class_exists(\Intervention\Image\ImageManager::class)
+            && class_exists(\Intervention\Image\Drivers\Gd\Driver::class)) {
+            try {
+                $this->manager = new \Intervention\Image\ImageManager(
+                    new \Intervention\Image\Drivers\Gd\Driver()
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Intervention Image init failed: ' . $e->getMessage());
+                $this->manager = null;
+            }
         }
     }
 
@@ -34,12 +41,12 @@ class ImageService
             throw new \InvalidArgumentException('File type not allowed.');
         }
 
-        // Image files: compress + resize
+        // Image files: compress + resize (if Intervention available)
         if ($this->isImage($file) && $this->manager) {
             return $this->compressAndStore($file, $directory, $filename);
         }
 
-        // Video/other files: store as-is
+        // Fallback: store as-is
         return $file->storeAs($directory, $filename, 'public');
     }
 
