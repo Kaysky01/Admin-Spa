@@ -103,7 +103,12 @@
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const preview = document.getElementById('avatarPreview');
-                    preview.innerHTML = `<img src="${e.target.result}" class="rounded-circle" style="width: 120px; height: 120px; object-fit: cover;">`;
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.className = 'rounded-circle';
+                    img.style.cssText = 'width: 120px; height: 120px; object-fit: cover;';
+                    preview.innerHTML = '';
+                    preview.appendChild(img);
                 }
                 reader.readAsDataURL(file);
             }
