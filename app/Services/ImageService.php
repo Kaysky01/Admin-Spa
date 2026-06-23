@@ -15,6 +15,64 @@ class ImageService
 
     public function __construct()
     {
+<<<<<<< HEAD
+=======
+        // Support both Intervention Image v2 and v3
+        if (class_exists(\Intervention\Image\ImageManager::class)) {
+            try {
+                if (class_exists(\Intervention\Image\Drivers\Gd\Driver::class)) {
+                    // Version 3 Gd initialization
+                    $this->manager = new \Intervention\Image\ImageManager(
+                        new \Intervention\Image\Drivers\Gd\Driver()
+                    );
+                } else {
+                    // Version 2 Gd initialization
+                    $this->manager = new \Intervention\Image\ImageManager([
+                        'driver' => 'gd'
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Intervention Image init failed: ' . $e->getMessage());
+                $this->manager = null;
+            }
+        }
+    }
+
+    /**
+     * Process uploaded file: sanitize, compress images, store.
+     */
+    public function processAndStore(UploadedFile $file, string $directory = 'reports'): string
+    {
+        $extension = strtolower($file->getClientOriginalExtension());
+        $filename  = time() . '_' . Str::random(8) . '.' . $extension;
+
+        // Security: Use allowlist instead of blocklist
+        $allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'avi', 'gif'];
+        if (!in_array($extension, $allowedExtensions)) {
+            throw new \InvalidArgumentException('File type not allowed. Allowed types: ' . implode(', ', $allowedExtensions));
+        }
+
+        // Additional Security check: Check MIME type to ensure it matches the extension
+        $mime = $file->getMimeType();
+        if (!str_starts_with($mime, 'image/') && !str_starts_with($mime, 'video/')) {
+            throw new \InvalidArgumentException('Invalid file content.');
+        }
+
+        // Image files: compress + resize (if Intervention available)
+        if ($this->isImage($file) && $this->manager) {
+            return $this->compressAndStore($file, $directory, $filename);
+        }
+
+        // Fallback: store as-is
+        return $file->storeAs($directory, $filename, 'public');
+    }
+
+    /**
+     * Compress and resize image using Intervention Image.
+     */
+    protected function compressAndStore(UploadedFile $file, string $directory, string $filename): string
+    {
+>>>>>>> 88e4640 (chore: implement OWASP security fixes)
         try {
             // Intervention Image v3
             $this->manager = new ImageManager(
